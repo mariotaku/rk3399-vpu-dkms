@@ -182,15 +182,26 @@ static void device_run(void *priv)
 
 	ret = clk_bulk_enable(ctx->dev->variant->num_clocks, ctx->dev->clocks);
 	if (ret)
-		goto err_cancel_job;
+		goto err_pm_put;
 
 	v4l2_m2m_buf_copy_metadata(src, dst, true);
 
-	if (ctx->codec_ops->run(ctx))
-		goto err_cancel_job;
+	if (ctx->codec_ops->run(ctx)) {
+		/*
+		 * rk3399-vpu-dkms: undo the clock and runtime PM references
+		 * taken above (the same fix as the 2026 series' "media:
+		 * verisilicon: Cancel job with runtime PM put/clk disable on
+		 * failure").
+		 */
+		hantro_job_finish(ctx->dev, ctx, VB2_BUF_STATE_ERROR);
+		return;
+	}
 
 	return;
 
+err_pm_put:
+	pm_runtime_mark_last_busy(ctx->dev->dev);
+	pm_runtime_put_autosuspend(ctx->dev->dev);
 err_cancel_job:
 	hantro_job_finish_no_pm(ctx->dev, ctx, VB2_BUF_STATE_ERROR);
 }
@@ -600,7 +611,7 @@ static int hantro_ctrls_setup(struct hantro_dev *vpu,
 {
 	int i, num_ctrls = ARRAY_SIZE(controls);
 
-	v4l2_ctrl_handler_init(&ctx->ctrl_handler, num_ctrls);
+	v4l2_ctrl_handler_init(&ctx->ctrl_handler, num_ctrls + 16);
 
 	for (i = 0; i < num_ctrls; i++) {
 		if (!(allowed_codecs & controls[i].codec))
@@ -616,6 +627,17 @@ static int hantro_ctrls_setup(struct hantro_dev *vpu,
 			return ctx->ctrl_handler.error;
 		}
 	}
+
+	if (allowed_codecs & HANTRO_H264_ENCODER) {
+		int ret = hantro_h264_enc_ctrls_setup(ctx);
+
+		if (ret) {
+			vpu_err("Adding H.264 encoder controls failed %d\n", ret);
+			v4l2_ctrl_handler_free(&ctx->ctrl_handler);
+			return ret;
+		}
+	}
+
 	return v4l2_ctrl_handler_setup(&ctx->ctrl_handler);
 }
 

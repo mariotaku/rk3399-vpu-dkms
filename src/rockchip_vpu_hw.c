@@ -61,6 +61,130 @@ static const struct hantro_fmt rockchip_vpu_enc_fmts[] = {
 	},
 };
 
+/*
+ * RK3399 encoder formats (rk3399-vpu-dkms): the stock list plus H.264 and
+ * more raw formats: single-buffer NV12 and YUV420 (both encoders), and
+ * 32-bit RGB converted to YCbCr by the hardware (H.264 only).
+ */
+static const struct hantro_fmt rk3399_vpu_enc_fmts[] = {
+	{
+		.fourcc = V4L2_PIX_FMT_YUV420M,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_YUV420P,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_NV12M,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_YUV420SP,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_YUYV,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_YUYV422,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_UYVY,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_UYVY422,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_NV12,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_YUV420SP,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_YUV420,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_YUV420P,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_XBGR32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_ABGR32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_RGBX32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_RGBA32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_XRGB32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_ARGB32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_BGRX32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_BGRA32,
+		.codec_mode = HANTRO_MODE_NONE,
+		.enc_fmt = ROCKCHIP_VPU_ENC_FMT_RGB888,
+		.h264_enc_only = true,
+	},
+	{
+		.fourcc = V4L2_PIX_FMT_JPEG,
+		.codec_mode = HANTRO_MODE_JPEG_ENC,
+		.max_depth = 2,
+		.header_size = JPEG_HEADER_SIZE,
+		.frmsize = {
+			.min_width = 96,
+			.max_width = 8192,
+			.step_width = MB_DIM,
+			.min_height = 32,
+			.max_height = 8192,
+			.step_height = MB_DIM,
+		},
+	},
+	{
+		/*
+		 * The visible size may end inside the last macroblock; the
+		 * hardware crops in steps of 4 columns, the SPS in steps of
+		 * 2 rows. VEPU2 encodes H.264 up to 1920x1088.
+		 *
+		 * Inter frames need at least 8x4 macroblocks: at 6-7 columns
+		 * the P-frame output differs from run to run and drifts from
+		 * the decoder's reconstruction, at 3 rows it drifts, and at 2
+		 * rows the hardware times out (status 0x441). 116x50 is the
+		 * smallest visible size that rounds up to 128x64.
+		 */
+		.fourcc = V4L2_PIX_FMT_H264,
+		.codec_mode = HANTRO_MODE_H264_ENC,
+		.max_depth = 2,
+		.frmsize = {
+			.min_width = 116,
+			.max_width = 1920,
+			.step_width = 4,
+			.min_height = 50,
+			.max_height = 1088,
+			.step_height = 2,
+		},
+	},
+};
+
 static const struct hantro_fmt rockchip_vpu1_postproc_fmts[] = {
 	{
 		.fourcc = V4L2_PIX_FMT_YUYV,
@@ -563,6 +687,13 @@ static const struct hantro_codec_ops rk3399_vpu_codec_ops[] = {
 		.reset = rockchip_vpu2_enc_reset,
 		.done = rockchip_vpu2_jpeg_enc_done,
 	},
+	[HANTRO_MODE_H264_ENC] = {
+		.run = rockchip_vpu2_h264_enc_run,
+		.reset = rockchip_vpu2_enc_reset,
+		.done = rockchip_vpu2_h264_enc_done,
+		.init = hantro_h264_enc_init,
+		.exit = hantro_h264_enc_exit,
+	},
 	[HANTRO_MODE_H264_DEC] = {
 		.run = rockchip_vpu2_h264_dec_run,
 		.reset = rockchip_vpu2_dec_reset,
@@ -729,13 +860,13 @@ const struct hantro_variant rk3328_vpu_variant = {
  */
 const struct hantro_variant rk3399_vpu_variant = {
 	.enc_offset = 0x0,
-	.enc_fmts = rockchip_vpu_enc_fmts,
-	.num_enc_fmts = ARRAY_SIZE(rockchip_vpu_enc_fmts),
+	.enc_fmts = rk3399_vpu_enc_fmts,
+	.num_enc_fmts = ARRAY_SIZE(rk3399_vpu_enc_fmts),
 	.dec_offset = 0x400,
 	.dec_fmts = rk3399_vpu_dec_fmts,
 	.num_dec_fmts = ARRAY_SIZE(rk3399_vpu_dec_fmts),
-	.codec = HANTRO_JPEG_ENCODER | HANTRO_MPEG2_DECODER |
-		 HANTRO_VP8_DECODER,
+	.codec = HANTRO_JPEG_ENCODER | HANTRO_H264_ENCODER |
+		 HANTRO_MPEG2_DECODER | HANTRO_VP8_DECODER,
 	.codec_ops = rk3399_vpu_codec_ops,
 	.irqs = rockchip_vpu2_irqs,
 	.num_irqs = ARRAY_SIZE(rockchip_vpu2_irqs),

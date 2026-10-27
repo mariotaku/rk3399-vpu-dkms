@@ -17,6 +17,7 @@
 
 #include "rockchip_av1_entropymode.h"
 #include "rockchip_av1_filmgrain.h"
+#include "v4l2-h264-enc.h"
 
 #define DEC_8190_ALIGN_MASK	0x07U
 
@@ -98,6 +99,68 @@ struct hantro_h264_dec_reflists {
 	struct v4l2_h264_reference p[V4L2_H264_REF_LIST_LEN];
 	struct v4l2_h264_reference b0[V4L2_H264_REF_LIST_LEN];
 	struct v4l2_h264_reference b1[V4L2_H264_REF_LIST_LEN];
+};
+
+/*
+ * H.264 encoder (rk3399-vpu-dkms addition).
+ *
+ * struct hantro_h264_enc_cfg - encoder settings from the V4L2 controls
+ * and S_PARM, kept outside the codec union because controls are set
+ * before streaming starts. Written by the control handler under the
+ * control lock, read by the encoder at the start of each frame.
+ */
+struct hantro_h264_enc_cfg {
+	u32 bitrate;
+	bool rc_enable;
+	u32 gop_size;
+	u32 i_period;
+	u32 header_mode;
+	u32 profile;
+	u32 level;
+	u32 qp_min;
+	u32 qp_max;
+	u32 qp_i;
+	u32 qp_p;
+	u32 bitrate_mode;
+	u32 quality;
+	bool force_idr;
+	struct v4l2_fract timeperframe;
+};
+
+#define HANTRO_H264_ENC_REC_COUNT	2
+
+/**
+ * struct hantro_h264_enc_hw_ctx - per-stream H.264 encoder state
+ * @rec:	Reconstruction buffers; one is written by the current frame,
+ *		the other holds the reference (previous reconstruction).
+ * @rec_cur:	Index in @rec written by the current frame.
+ * @state:	SPS, PPS and per-frame parameters, plus rate control inputs.
+ * @rc:		Rate control.
+ * @rbsp:	Bitstream writer for SPS and PPS.
+ * @frame_num:	frame_num of the next frame.
+ * @idr_pic_id:	idr_pic_id of the next IDR frame.
+ * @gop_count:	Frames encoded since the last IDR frame.
+ * @hdr_len:	Bytes the driver wrote before the slice in the current frame.
+ * @strm_base:	8-byte aligned offset where the hardware starts writing.
+ * @headers_sent: The SPS and PPS have been sent at least once.
+ * @frame_idr:	The frame being encoded is an IDR frame.
+ * @frame_pending: A frame was started and has not completed; if it is still
+ *		set when the next one starts, the previous one failed.
+ */
+struct hantro_h264_enc_hw_ctx {
+	struct hantro_aux_buf rec[HANTRO_H264_ENC_REC_COUNT];
+	unsigned int rec_cur;
+	struct v4l2_h264_enc_state state;
+	struct v4l2_h264_enc_rc rc;
+	struct v4l2_h264_enc_rbsp rbsp;
+	u32 frame_num;
+	u32 idr_pic_id;
+	u32 gop_count;
+	u32 hdr_len;
+	u32 strm_base;
+	bool headers_sent;
+	bool frame_idr;
+	bool frame_pending;
 };
 
 /**
@@ -400,6 +463,7 @@ enum hantro_enc_fmt {
 	ROCKCHIP_VPU_ENC_FMT_YUV420SP = 1,
 	ROCKCHIP_VPU_ENC_FMT_YUYV422 = 2,
 	ROCKCHIP_VPU_ENC_FMT_UYVY422 = 3,
+	ROCKCHIP_VPU_ENC_FMT_RGB888 = 7,
 };
 
 extern const struct hantro_variant imx8mm_vpu_g1_variant;
@@ -440,6 +504,14 @@ int hantro_h1_jpeg_enc_run(struct hantro_ctx *ctx);
 int rockchip_vpu2_jpeg_enc_run(struct hantro_ctx *ctx);
 void hantro_h1_jpeg_enc_done(struct hantro_ctx *ctx);
 void rockchip_vpu2_jpeg_enc_done(struct hantro_ctx *ctx);
+int rockchip_vpu2_h264_enc_run(struct hantro_ctx *ctx);
+void rockchip_vpu2_h264_enc_done(struct hantro_ctx *ctx);
+int hantro_h264_enc_init(struct hantro_ctx *ctx);
+int hantro_h264_enc_ctrls_setup(struct hantro_ctx *ctx);
+void hantro_h264_enc_exit(struct hantro_ctx *ctx);
+int hantro_h264_enc_prepare(struct hantro_ctx *ctx, u8 *dst, size_t dst_size);
+void hantro_h264_enc_complete(struct hantro_ctx *ctx, size_t bytesused);
+size_t hantro_h264_enc_rec_luma_size(struct hantro_ctx *ctx);
 
 dma_addr_t hantro_h264_get_ref_buf(struct hantro_ctx *ctx,
 				   unsigned int dpb_idx);

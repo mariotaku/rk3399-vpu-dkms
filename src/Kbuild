@@ -42,3 +42,12 @@ hantro-vpu-$(CONFIG_VIDEO_HANTRO_SUNXI) += \
 
 hantro-vpu-$(CONFIG_VIDEO_HANTRO_STM32MP25) += \
 		stm32mp25_vpu_hw.o
+
+# rk3399-vpu-dkms: stateful H.264 encoder on RK3399 VEPU2
+hantro-vpu-y += \
+		hantro_h264_enc.o \
+		v4l2-h264-enc-rbsp.o \
+		v4l2-h264-enc-rc.o
+
+hantro-vpu-$(CONFIG_VIDEO_HANTRO_ROCKCHIP) += \
+		rockchip_vpu2_hw_h264_enc.o

@@ -35,6 +35,7 @@ static int hantro_set_fmt_out(struct hantro_ctx *ctx,
 			      bool need_postproc);
 static int hantro_set_fmt_cap(struct hantro_ctx *ctx,
 			      struct v4l2_pix_format_mplane *pix_mp);
+static void hantro_keep_raw_fmt(struct hantro_ctx *ctx);
 
 static const struct hantro_fmt *
 hantro_get_formats(const struct hantro_ctx *ctx, unsigned int *num_fmts, bool need_postproc)
@@ -328,8 +329,26 @@ static int hantro_try_fmt(const struct hantro_ctx *ctx,
 
 	pix_mp->field = V4L2_FIELD_NONE;
 
-	v4l2_apply_frmsize_constraints(&pix_mp->width, &pix_mp->height,
-				       &vpu_fmt->frmsize);
+	if (!coded && ctx->is_encoder &&
+	    vpu_fmt->codec_mode == HANTRO_MODE_H264_ENC) {
+		/*
+		 * H.264 encoder input covers whole macroblocks; the visible
+		 * size is the CAPTURE format (or the OUTPUT crop).
+		 */
+		struct v4l2_frmsize_stepwise raw = vpu_fmt->frmsize;
+
+		raw.max_width = round_up(raw.max_width, MB_DIM);
+		raw.max_height = round_up(raw.max_height, MB_DIM);
+		pix_mp->width = round_up(pix_mp->width, MB_DIM);
+		pix_mp->height = round_up(pix_mp->height, MB_DIM);
+		raw.step_width = MB_DIM;
+		raw.step_height = MB_DIM;
+		v4l2_apply_frmsize_constraints(&pix_mp->width, &pix_mp->height,
+					       &raw);
+	} else {
+		v4l2_apply_frmsize_constraints(&pix_mp->width, &pix_mp->height,
+					       &vpu_fmt->frmsize);
+	}
 
 	if (!coded) {
 		/* Fill remaining fields */
@@ -363,6 +382,16 @@ static int hantro_try_fmt(const struct hantro_ctx *ctx,
 		 */
 		pix_mp->plane_fmt[0].sizeimage = fmt->header_size +
 			pix_mp->width * pix_mp->height * fmt->max_depth;
+	}
+
+	if (coded && fmt->codec_mode == HANTRO_MODE_H264_ENC) {
+		/* Room for an intra frame at low QP plus SPS and PPS. */
+		u32 min_size = round_up(pix_mp->width, MB_DIM) *
+			       round_up(pix_mp->height, MB_DIM) / 2 + SZ_4K;
+
+		pix_mp->plane_fmt[0].sizeimage =
+			clamp_t(u32, pix_mp->plane_fmt[0].sizeimage, min_size,
+				SZ_16M);
 	}
 
 	return 0;
@@ -445,6 +474,31 @@ hantro_reset_raw_fmt(struct hantro_ctx *ctx, int bit_depth, bool need_postproc)
 	}
 
 	return ret;
+}
+
+/*
+ * rk3399-vpu-dkms: after a CAPTURE format change, the encoder keeps the raw
+ * pixel format userspace chose (FFmpeg and GStreamer set OUTPUT first) and
+ * only adapts its size; it falls back to the default raw format otherwise.
+ */
+static void hantro_keep_raw_fmt(struct hantro_ctx *ctx)
+{
+	struct v4l2_pix_format_mplane raw_fmt;
+	const struct hantro_fmt *raw_vpu_fmt = ctx->vpu_src_fmt;
+
+	if (raw_vpu_fmt && raw_vpu_fmt->codec_mode == HANTRO_MODE_NONE) {
+		hantro_reset_fmt(&raw_fmt, raw_vpu_fmt);
+		raw_fmt.colorspace = ctx->src_fmt.colorspace;
+		raw_fmt.ycbcr_enc = ctx->src_fmt.ycbcr_enc;
+		raw_fmt.quantization = ctx->src_fmt.quantization;
+		raw_fmt.xfer_func = ctx->src_fmt.xfer_func;
+		raw_fmt.width = ctx->dst_fmt.width;
+		raw_fmt.height = ctx->dst_fmt.height;
+		if (!hantro_set_fmt_out(ctx, &raw_fmt, HANTRO_AUTO_POSTPROC))
+			return;
+	}
+
+	hantro_reset_raw_fmt(ctx, HANTRO_DEFAULT_BIT_DEPTH, HANTRO_AUTO_POSTPROC);
 }
 
 void hantro_reset_fmts(struct hantro_ctx *ctx)
@@ -598,7 +652,7 @@ static int hantro_set_fmt_cap(struct hantro_ctx *ctx,
 	 * changes to the raw format.
 	 */
 	if (ctx->is_encoder)
-		hantro_reset_raw_fmt(ctx, HANTRO_DEFAULT_BIT_DEPTH, HANTRO_AUTO_POSTPROC);
+		hantro_keep_raw_fmt(ctx);
 
 	/* Colorimetry information are always propagated. */
 	ctx->src_fmt.colorspace = pix_mp->colorspace;
@@ -699,6 +753,60 @@ static int vidioc_s_selection(struct file *file, void *priv,
 	return 0;
 }
 
+/*
+ * rk3399-vpu-dkms: frame rate for the H.264 encoder's rate control and VUI.
+ * Both queues share one frame interval; the encoder does no frame rate
+ * conversion.
+ */
+static int vidioc_g_parm(struct file *file, void *priv,
+			 struct v4l2_streamparm *parm)
+{
+	struct hantro_ctx *ctx = fh_to_ctx(priv);
+	struct v4l2_fract *tpf;
+
+	if (!ctx->is_encoder)
+		return -ENOTTY;
+
+	if (V4L2_TYPE_IS_OUTPUT(parm->type)) {
+		parm->parm.output.capability = V4L2_CAP_TIMEPERFRAME;
+		tpf = &parm->parm.output.timeperframe;
+	} else {
+		parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
+		tpf = &parm->parm.capture.timeperframe;
+	}
+	*tpf = ctx->h264_enc_cfg.timeperframe;
+
+	return 0;
+}
+
+static int vidioc_s_parm(struct file *file, void *priv,
+			 struct v4l2_streamparm *parm)
+{
+	struct hantro_ctx *ctx = fh_to_ctx(priv);
+	struct v4l2_fract *tpf;
+
+	if (!ctx->is_encoder)
+		return -ENOTTY;
+
+	if (V4L2_TYPE_IS_OUTPUT(parm->type))
+		tpf = &parm->parm.output.timeperframe;
+	else
+		tpf = &parm->parm.capture.timeperframe;
+
+	if (!tpf->numerator || !tpf->denominator) {
+		*tpf = ctx->h264_enc_cfg.timeperframe;
+	} else {
+		/* 1 to 240 frames per second. */
+		if (tpf->denominator > 240 * tpf->numerator)
+			tpf->denominator = 240 * tpf->numerator;
+		if (tpf->numerator > tpf->denominator)
+			tpf->numerator = tpf->denominator;
+		ctx->h264_enc_cfg.timeperframe = *tpf;
+	}
+
+	return vidioc_g_parm(file, priv, parm);
+}
+
 static const struct v4l2_event hantro_eos_event = {
 	.type = V4L2_EVENT_EOS
 };
@@ -758,6 +866,9 @@ const struct v4l2_ioctl_ops hantro_ioctl_ops = {
 
 	.vidioc_streamon = v4l2_m2m_ioctl_streamon,
 	.vidioc_streamoff = v4l2_m2m_ioctl_streamoff,
+
+	.vidioc_g_parm = vidioc_g_parm,
+	.vidioc_s_parm = vidioc_s_parm,
 
 	.vidioc_g_selection = vidioc_g_selection,
 	.vidioc_s_selection = vidioc_s_selection,
@@ -905,6 +1016,17 @@ static int hantro_start_streaming(struct vb2_queue *q, unsigned int count)
 			codec_mode = ctx->vpu_dst_fmt->codec_mode;
 
 		vpu_debug(4, "Codec mode = %d\n", codec_mode);
+
+		/* Raw formats only the H.264 encoder can read. */
+		if (ctx->is_encoder && codec_mode != HANTRO_MODE_H264_ENC &&
+		    ctx->vpu_src_fmt->h264_enc_only) {
+			struct vb2_v4l2_buffer *vbuf;
+
+			while ((vbuf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx)))
+				v4l2_m2m_buf_done(vbuf, VB2_BUF_STATE_QUEUED);
+			return -EINVAL;
+		}
+
 		ctx->codec_ops = &ctx->dev->variant->codec_ops[codec_mode];
 		if (ctx->codec_ops->init) {
 			ret = ctx->codec_ops->init(ctx);

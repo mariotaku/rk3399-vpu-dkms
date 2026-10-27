@@ -85,8 +85,23 @@ static void rockchip_vpu2_jpeg_enc_set_buffers(struct hantro_dev *vpu,
 	vepu_write_relaxed(vpu, size_left, VEPU_REG_STR_BUF_LIMIT);
 
 	if (pix_fmt->num_planes == 1) {
+		const struct v4l2_format_info *info =
+			v4l2_format_info(pix_fmt->pixelformat);
+
 		src[0] = vb2_dma_contig_plane_dma_addr(src_buf, 0);
 		vepu_write_relaxed(vpu, src[0], VEPU_REG_ADDR_IN_PLANE_0);
+
+		/* rk3399-vpu-dkms: single-buffer NV12 and YUV420. */
+		if (info && info->comp_planes > 1) {
+			u32 luma = pix_fmt->plane_fmt[0].bytesperline *
+				   pix_fmt->height;
+
+			src[1] = src[0] + luma;
+			vepu_write_relaxed(vpu, src[1], VEPU_REG_ADDR_IN_PLANE_1);
+			if (info->comp_planes > 2)
+				vepu_write_relaxed(vpu, src[1] + luma / 4,
+						   VEPU_REG_ADDR_IN_PLANE_2);
+		}
 	} else if (pix_fmt->num_planes == 2) {
 		src[0] = vb2_dma_contig_plane_dma_addr(src_buf, 0);
 		src[1] = vb2_dma_contig_plane_dma_addr(src_buf, 1);

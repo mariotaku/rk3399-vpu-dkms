@@ -1,3 +1,10 @@
+rk3399-vpu-dkms (0.2.0) unstable; urgency=medium
+
+  * Stateful H.264 encoder on RK3399 VEPU2: I and P frames, constant QP
+    and CBR, driver-written SPS/PPS, NV12/YUV420/YUYV/UYVY and RGB input.
+
+ -- Mariotaku <git@mariotaku.me>  Tue, 27 Oct 2026 14:00:00 +0000
+
 rk3399-vpu-dkms (0.1.0) unstable; urgency=medium
 
   * Stock hantro-vpu from Debian linux 6.12.113-1, built out of tree.

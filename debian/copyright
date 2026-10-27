@@ -13,6 +13,49 @@ Copyright: 2018-2024 the Linux kernel hantro driver authors (Collabora,
  2026 Mariotaku
 License: GPL-2.0-only
 
+Files: src/v4l2-h264-enc-defs.h src/v4l2-h264-enc.h
+ src/v4l2-h264-enc-rbsp.c src/v4l2-h264-enc-rbsp.h
+ src/v4l2-h264-enc-rc.c src/v4l2-h264-enc-rc.h
+Copyright: 2025-2026 Paul Kocialkowski <paulk@sys-base.io>
+ 2026 Mariotaku
+Comment: From the v4l2-h264-enc series posted to linux-media on
+ 2026-05-22 (message-id 20260522101653.2565125-1-paulk@sys-base.io),
+ used as module-internal code; changes listed in README.md.
+License: GPL-2.0-or-later
+
+Files: src/rockchip_vpu2_hw_h264_enc.c
+Copyright: 2018 Rockchip Electronics Co., Ltd.
+ 2021 Bootlin
+ 2026 Mariotaku
+Comment: Register programming ported from Bootlin's
+ rk3399_vpu_hw_h264_enc.c (github.com/bootlin/linux, branch
+ hantro/h264-encoding-v5.11).
+License: GPL-2.0-only
+
+Files: tools/neatvnc/stub/enc/h264-encoder.h
+Copyright: 2021-2024 Andri Yngvason
+License: ISC
+ Permission to use, copy, modify, and/or distribute this software for any
+ purpose with or without fee is hereby granted, provided that the above
+ copyright notice and this permission notice appear in all copies.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+License: GPL-2.0-or-later
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the
+ Free Software Foundation; either version 2 of the License, or (at your
+ option) any later version.
+ .
+ On Debian systems, the full text of the GNU General Public License
+ version 2 can be found in the file /usr/share/common-licenses/GPL-2.
+
 License: GPL-2.0-only
  This program is free software; you can redistribute it and/or modify it
  under the terms of the GNU General Public License version 2 as published

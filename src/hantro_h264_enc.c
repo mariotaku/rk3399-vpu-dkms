@@ -294,6 +294,179 @@ static int h264e_write_headers(struct hantro_ctx *ctx, u8 *dst, size_t size)
 	return 0;
 }
 
+/*
+ * Constant bitrate.
+ *
+ * The driver replaces the CBR estimate of the shared rate control with a
+ * frame-level leaky bucket: a virtual buffer of one second of the bitrate
+ * that the frames fill and the bitrate drains, steered back to half full
+ * over half a second. Each frame type has a complexity, its size scaled to
+ * QP 0 assuming size halves every 6 QP; the QP for a frame is the one that
+ * brings the larger of the last and the average complexity down to the
+ * frame's target. Using the larger one keeps cheap frames (repeated or
+ * static pictures) from pulling QP down ahead of a scene change; for the
+ * same reason QP falls by at most 2 per frame and stays within 4 of the
+ * running average of P-frame QPs. The buffer counts at most half a second
+ * of unused bitrate as credit and one second of overshoot as debt, and no
+ * frame gets less than a quarter of its share: after a scene change the
+ * stream overshoots for a while rather than starving at QP 51.
+ */
+#define CBR_QP_STEP_NUM		1149	/* 2^(1/6) * 1024 */
+#define CBR_QP_STEP_DEN		1024
+#define CBR_IP_RATIO_DEFAULT	(6 * 16)
+
+static int h264e_cbr_init(struct v4l2_h264_enc_rc *rc)
+{
+	struct hantro_ctx *ctx = rc->private_data;
+	struct hantro_h264_enc_cbr *cbr = &ctx->h264_enc.cbr;
+	u64 size = ctx->h264_enc_cfg.bitrate;
+
+	memset(cbr, 0, sizeof(*cbr));
+	cbr->level = size / 2;
+	cbr->ip_ratio = CBR_IP_RATIO_DEFAULT;
+
+	return 0;
+}
+
+static u64 h264e_cbr_scale(u64 bits, int qp)
+{
+	for (; qp > 0; qp--)
+		bits = div_u64(bits * CBR_QP_STEP_NUM, CBR_QP_STEP_DEN);
+
+	return bits;
+}
+
+/* The lowest QP at which a frame of complexity @cplx fits in @target. */
+static int h264e_cbr_qp(u64 cplx, u64 target)
+{
+	int qp = 0;
+
+	target = max(target, 1ULL);
+	while (cplx > target && qp < 51) {
+		cplx = div_u64(cplx * CBR_QP_STEP_DEN, CBR_QP_STEP_NUM);
+		qp++;
+	}
+
+	return qp;
+}
+
+static int h264e_cbr_estimate(struct v4l2_h264_enc_rc *rc, unsigned int *qp)
+{
+	struct hantro_ctx *ctx = rc->private_data;
+	struct hantro_h264_enc_cbr *cbr = &ctx->h264_enc.cbr;
+	struct v4l2_h264_enc_state *state = rc->state;
+	struct v4l2_fract *tpf = &state->timeperframe;
+	unsigned int type, fps, period;
+	u64 rate, size, base, target, cplx;
+	s64 correction;
+	int new_qp, last_qp;
+
+	if (state->bitrate_mode != V4L2_MPEG_VIDEO_BITRATE_MODE_CBR ||
+	    !state->frame_rc_enable)
+		return -EOPNOTSUPP;
+
+	type = state->encode.slice_type == V4L2_H264_SLICE_TYPE_I ? 0 : 1;
+	fps = max(1U, DIV_ROUND_CLOSEST(tpf->denominator, tpf->numerator));
+	rate = div_u64((u64)state->bitrate * tpf->numerator, tpf->denominator);
+	size = state->bitrate;
+	period = cbr->period ? cbr->period : 10 * fps;
+
+	/* Split the frame budget of a period between its I and P frames. */
+	base = div_u64(rate * period * 16, (period - 1) * 16 + cbr->ip_ratio);
+	if (!type)
+		base = div_u64(base * cbr->ip_ratio, 16);
+
+	/* Steer the buffer back to half full over half a second. */
+	correction = div_s64((s64)size / 2 - cbr->level, max(fps / 2, 1U));
+	target = clamp_t(s64, (s64)base + correction, base / 4, base * 2);
+
+	/*
+	 * I frames are predicted from the current P frames, since the
+	 * content may have changed since the last I frame.
+	 */
+	if (cbr->valid[1]) {
+		cplx = max(cbr->cplx[1], cbr->cplx_avg[1]);
+		last_qp = cbr->qp[1];
+		if (!type) {
+			cplx = div_u64(cplx * cbr->ip_ratio, 16);
+			last_qp = cbr->valid[0] ? cbr->qp[0] : last_qp;
+		}
+	} else if (cbr->valid[0]) {
+		cplx = max(cbr->cplx[0], cbr->cplx_avg[0]);
+		if (type)
+			cplx = div_u64(cplx * 16, cbr->ip_ratio);
+		last_qp = cbr->qp[0];
+	} else {
+		/* First frame: the shared rate control's initial estimate. */
+		return -EOPNOTSUPP;
+	}
+
+	new_qp = max(h264e_cbr_qp(cplx, target), last_qp - 2);
+	if (cbr->qp_avg)
+		new_qp = max(new_qp, (int)(cbr->qp_avg / 16) - 4);
+	new_qp = clamp(new_qp, (int)state->qp_min, (int)state->qp_max);
+
+	cbr->type = type;
+	cbr->qp_cur = new_qp;
+	*qp = new_qp;
+
+	return 0;
+}
+
+static int h264e_cbr_complete(struct v4l2_h264_enc_rc *rc,
+			      unsigned long bytesused)
+{
+	struct hantro_ctx *ctx = rc->private_data;
+	struct hantro_h264_enc_cbr *cbr = &ctx->h264_enc.cbr;
+	struct v4l2_h264_enc_state *state = rc->state;
+	struct v4l2_fract *tpf = &state->timeperframe;
+	unsigned int type = cbr->type;
+	u64 bits = (u64)bytesused * 8;
+	u64 rate, size, cplx;
+
+	if (state->bitrate_mode != V4L2_MPEG_VIDEO_BITRATE_MODE_CBR ||
+	    !state->frame_rc_enable)
+		return -EOPNOTSUPP;
+
+	/* The first frame used the shared estimate; take its QP from there. */
+	if (!cbr->valid[0] && !cbr->valid[1]) {
+		type = state->encode.slice_type == V4L2_H264_SLICE_TYPE_I ? 0 : 1;
+		cbr->qp_cur = rc->qp;
+	}
+
+	rate = div_u64((u64)state->bitrate * tpf->numerator, tpf->denominator);
+	size = state->bitrate;
+	cbr->level = clamp_t(s64, cbr->level + (s64)bits - (s64)rate, 0,
+			     (s64)size * 3 / 2);
+
+	cplx = h264e_cbr_scale(max(bits, 1ULL), cbr->qp_cur);
+
+	/* I to P size ratio at the same QP. */
+	if (!type && cbr->valid[1])
+		cbr->ip_ratio = clamp_t(u64, div64_u64(cplx * 16, max(cbr->cplx[1], 1ULL)),
+					2 * 16, 20 * 16);
+
+	/* Running average of P-frame QPs, x16, over about half a second. */
+	if (type)
+		cbr->qp_avg = cbr->qp_avg ?
+			      (15 * cbr->qp_avg + 16 * cbr->qp_cur) / 16 :
+			      16 * cbr->qp_cur;
+
+	cbr->cplx_avg[type] = cbr->valid[type] ?
+			      (3 * cbr->cplx_avg[type] + cplx) / 4 : cplx;
+	cbr->cplx[type] = cplx;
+	cbr->qp[type] = cbr->qp_cur;
+	cbr->valid[type] = true;
+
+	return 0;
+}
+
+static const struct v4l2_h264_enc_rc_ops h264e_rc_ops = {
+	.init = h264e_cbr_init,
+	.estimate = h264e_cbr_estimate,
+	.complete = h264e_cbr_complete,
+};
+
 int hantro_h264_enc_init(struct hantro_ctx *ctx)
 {
 	struct hantro_dev *vpu = ctx->dev;
@@ -317,6 +490,8 @@ int hantro_h264_enc_init(struct hantro_ctx *ctx)
 	}
 
 	v4l2_h264_enc_rc_init(&h264->rc);
+	h264->rc.ops = &h264e_rc_ops;
+	h264->rc.private_data = ctx;
 
 	return 0;
 }
@@ -407,6 +582,7 @@ int hantro_h264_enc_prepare(struct hantro_ctx *ctx, u8 *dst, size_t dst_size)
 	}
 	encode->frame_num = h264->frame_num;
 
+	h264->cbr.period = period;
 	ret = v4l2_h264_enc_rc_step(&h264->rc, state);
 	if (ret)
 		return ret;

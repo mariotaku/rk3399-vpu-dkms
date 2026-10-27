@@ -130,12 +130,42 @@ struct hantro_h264_enc_cfg {
 #define HANTRO_H264_ENC_REC_COUNT	2
 
 /**
+ * struct hantro_h264_enc_cbr - frame-level constant bitrate control
+ * @level:	Virtual buffer fullness in bits, kept between empty and twice
+ *		the buffer size (one second of the bitrate); half full is on
+ *		target.
+ * @cplx:	Complexity of the last I (index 0) and P (index 1) frame: its
+ *		size in bits scaled to QP 0.
+ * @cplx_avg:	Running average of @cplx.
+ * @qp:		QP of the last I and P frame.
+ * @valid:	@cplx and @qp hold a frame of that type.
+ * @qp_avg:	Running average of P-frame QPs, x16.
+ * @ip_ratio:	Size of an I frame relative to a P frame at the same QP, x16.
+ * @period:	Frames from one IDR frame to the next, 0 for none.
+ * @type:	Type of the frame being encoded (0 = I, 1 = P).
+ * @qp_cur:	QP of the frame being encoded.
+ */
+struct hantro_h264_enc_cbr {
+	s64 level;
+	u64 cplx[2];
+	u64 cplx_avg[2];
+	u32 qp[2];
+	bool valid[2];
+	u32 qp_avg;
+	u32 ip_ratio;
+	u32 period;
+	u8 type;
+	u32 qp_cur;
+};
+
+/**
  * struct hantro_h264_enc_hw_ctx - per-stream H.264 encoder state
  * @rec:	Reconstruction buffers; one is written by the current frame,
  *		the other holds the reference (previous reconstruction).
  * @rec_cur:	Index in @rec written by the current frame.
  * @state:	SPS, PPS and per-frame parameters, plus rate control inputs.
  * @rc:		Rate control.
+ * @cbr:	State of the driver's constant bitrate control.
  * @rbsp:	Bitstream writer for SPS and PPS.
  * @frame_num:	frame_num of the next frame.
  * @idr_pic_id:	idr_pic_id of the next IDR frame.
@@ -152,6 +182,7 @@ struct hantro_h264_enc_hw_ctx {
 	unsigned int rec_cur;
 	struct v4l2_h264_enc_state state;
 	struct v4l2_h264_enc_rc rc;
+	struct hantro_h264_enc_cbr cbr;
 	struct v4l2_h264_enc_rbsp rbsp;
 	u32 frame_num;
 	u32 idr_pic_id;

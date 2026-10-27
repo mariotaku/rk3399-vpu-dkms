@@ -22,6 +22,25 @@ stateful V4L2 mem2mem H.264 encoder on RK3399's VEPU2.
 - Division of work: the driver writes SPS and PPS (Annex-B, before every
   keyframe), the hardware writes the slice. Frame-level rate control runs in the
   kernel.
+- Rate control, per frame (the hardware runs one QP for the whole frame):
+  - Frame rate control off: constant QP from `V4L2_CID_MPEG_VIDEO_H264_I_FRAME_QP`
+    and `..._P_FRAME_QP`.
+  - `V4L2_MPEG_VIDEO_BITRATE_MODE_CQ`: QP from `V4L2_CID_MPEG_VIDEO_CONSTANT_QUALITY`
+    (Paul Kocialkowski's mapping, inverted so that 100 is best).
+  - `V4L2_MPEG_VIDEO_BITRATE_MODE_CBR`: the driver's own leaky bucket in
+    `hantro_h264_enc.c`, plugged into the shared rate control as driver
+    operations. The series' CBR moves QP by at most 3 per frame from the
+    last few frames' sizes and has no buffer model; on natural video it
+    overshot the bitrate by 40-160%. The leaky bucket keeps a virtual buffer
+    of one second of bitrate near half full, models each frame type's
+    complexity (size scaled to QP 0, halving every 6 QP) from the larger of
+    the last and the average frame, splits the budget of a GOP between the
+    I frame and the P frames by their measured size ratio, lets QP fall by
+    at most 2 per frame and no more than 4 below the running P-frame
+    average, and caps credit at half a second and debt at one second.
+    Without look-ahead a scene change still costs up to about twice the
+    bitrate for that second, followed by high QP while the debt is repaid.
+  - VBR is not offered.
 - The module keeps the name `hantro-vpu`. The in-tree module owns the whole
   `rockchip,rk3399-vpu` node (encoder and decoders share one register window,
   IOMMU and power domain), so the replacement must carry the whole driver.
@@ -132,6 +151,59 @@ Measured on the board (Debian 13, FFmpeg 7.1 with v4l2-request, GStreamer
   interrupt count rose by one per frame) and JPEG encode through GStreamer
   `v4l2jpegenc` give identical output hashes.
 
+## Measurements
+
+ROCK Pi 4 (RK3399, Debian 13, kernel 6.12.113), nothing else running, input
+clips in RAM. Two 150-frame clips at 30 fps: natural footage with a scene
+change (`nat`) and a UI screen recording with bursts of scrolling between
+static stretches (`ui`), each at 1280x720 and 1920x1080. GOP 30, CBR.
+
+Throughput and CPU (`tools/h264enc-test`, MMAP buffers filled by `memcpy`;
+FFmpeg 7.1 `h264_v4l2m2m`; libx264 `ultrafast` on all six cores for scale):
+
+| | 720p | 1080p |
+|---|---|---|
+| h264enc-test | 115 fps, 4.4 ms CPU per frame (13% of a core at 30 fps) | 60 fps, 9.1 ms per frame (27% of a core) |
+| FFmpeg `h264_v4l2m2m` | 56-65 fps, 9-10 ms per frame (26-30%) | 39 fps, 14 ms per frame (41%) |
+| libx264 ultrafast | 78-80 fps, 42 ms per frame | 48-50 fps, 85-88 ms per frame (2.6 cores at 30 fps) |
+
+CBR accuracy, whole clip and per second (as a fraction of the target):
+
+| clip | target | produced | per second |
+|---|---|---|---|
+| nat720 | 1 / 2 / 4 Mbit/s | -2.4% / -1.3% / -7.5% | 0.34-2.01 / 0.40-2.08 / 0.73-1.11 |
+| ui720 | 1 / 2 / 4 Mbit/s | -4.5% / -11.4% / -14.3% | 0.79-1.08 / 0.76-1.01 / 0.70-1.09 |
+| nat1080 | 2 / 4 / 8 Mbit/s | -4.9% / +1.9% / -6.8% | 0.39-2.00 / 0.40-2.23 / 0.74-1.16 |
+| ui1080 | 2 / 4 / 8 Mbit/s | -3.8% / -13.3% / -15.4% | 0.79-1.10 / 0.73-0.99 / 0.69-1.01 |
+
+The second at 2.0-2.2x the target is the scene change; the next seconds
+repay it. The UI clip falls short at higher rates because its static
+stretches cannot use the bits, and the encoder writes no filler.
+
+Quality against libx264 at the same bitrate target (luma PSNR in dB / SSIM;
+libx264 with `-maxrate` and `-bufsize` equal to the target):
+
+| clip | target | VEPU2 | x264 veryfast, Baseline | x264 medium, High |
+|---|---|---|---|---|
+| nat720 | 1 Mbit/s | 29.40 / 0.877 | 34.17 / 0.954 | 36.45 / 0.973 |
+| nat720 | 2 Mbit/s | 33.84 / 0.945 | 37.25 / 0.977 | 40.13 / 0.988 |
+| nat720 | 4 Mbit/s | 38.47 / 0.978 | 40.07 / 0.988 | 43.82 / 0.995 |
+| ui720 | 1 Mbit/s | 28.46 / 0.881 | 30.01 / 0.924 | 33.65 / 0.962 |
+| ui720 | 2 Mbit/s | 32.36 / 0.940 | 35.25 / 0.970 | 38.06 / 0.983 |
+| ui720 | 4 Mbit/s | 36.81 / 0.972 | 40.97 / 0.990 | 42.40 / 0.992 |
+| nat1080 | 2 Mbit/s | 30.41 / 0.896 | 35.35 / 0.961 | 38.18 / 0.980 |
+| nat1080 | 4 Mbit/s | 33.97 / 0.950 | 39.30 / 0.984 | 42.66 / 0.992 |
+| nat1080 | 8 Mbit/s | 39.15 / 0.981 | 42.63 / 0.992 | 46.60 / 0.996 |
+| ui1080 | 2 Mbit/s | 28.35 / 0.876 | 33.01 / 0.951 | 33.25 / 0.958 |
+| ui1080 | 4 Mbit/s | 32.64 / 0.940 | 38.28 / 0.981 | 38.42 / 0.984 |
+| ui1080 | 8 Mbit/s | 38.24 / 0.977 | 43.77 / 0.993 | 44.07 / 0.994 |
+
+VEPU2 is 1.5-5.6 dB behind libx264 veryfast with the Baseline profile.
+Part of that is the encoder (one reference, one QP per frame, no rate
+distortion optimisation), part the frame-level rate control: the scene
+change is followed by about a second at high QP, and the UI clip spends
+less than its budget.
+
 ## Testing
 
 `tools/h264enc-test` encodes raw frames through the stateful interface
@@ -160,7 +232,7 @@ taken from Paul Kocialkowski's series keep their GPL-2.0-or-later notice.
 | `src/Kbuild` | the upstream `Makefile` of that directory, with `obj-m` |
 | `src/v4l2-h264-enc-rbsp.[ch]`, `src/v4l2-h264-enc-rc.[ch]`, `src/v4l2-h264-enc.h`, `src/v4l2-h264-enc-defs.h` | Paul Kocialkowski's v4l2-h264-enc series (linux-media, 2026-05-22, message-id `20260522101653.2565125-1-paulk@sys-base.io`), GPL-2.0-or-later, built into the module rather than exported. Changes: POC type 2 accepted; SPS/PPS `nal_ref_idc` 3 instead of 0; PPS High-profile tail written only when used; 64-bit rate-control products; `CONSTANT_QUALITY` mapping inverted to the spec's "100 is best"; `v4l2-h264-enc.h` trimmed to the state the writers use |
 | `src/rockchip_vpu2_hw_h264_enc.c` | register programming from Bootlin's `rk3399_vpu_hw_h264_enc.c` (github.com/bootlin/linux, branch `hantro/h264-encoding-v5.11`), reworked for a stateful encoder |
-| `src/hantro_h264_enc.c` | new: stateful front end (controls, GOP, SPS/PPS, references, rate control) |
+| `src/hantro_h264_enc.c` | new: stateful front end (controls, GOP, SPS/PPS, references, CBR rate control) |
 | `tools/neatvnc/stub/enc/h264-encoder.h` | neatvnc 0.9.1, ISC, copied unchanged so the test harness can build neatvnc's backend |
 
 Rockchip's MPP library (Apache-2.0) is read to understand hardware behaviour

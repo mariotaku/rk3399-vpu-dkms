@@ -1,0 +1,22 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: rk3399-vpu-dkms
+Comment: src/ is Linux's drivers/media/platform/verisilicon as shipped in
+ Debian's linux-source-6.12 (6.12.113-1), with changes listed in README.md.
+ Rockchip MPP (Apache-2.0) was read for hardware behaviour only; none of
+ its code is included.
+
+Files: *
+Copyright: 2018-2024 the Linux kernel hantro driver authors (Collabora,
+ Google, Rockchip, Bootlin, NXP, Pengutronix, and others; see the
+ headers of each file)
+ 2021 Bootlin (Paul Kocialkowski)
+ 2026 Mariotaku
+License: GPL-2.0-only
+
+License: GPL-2.0-only
+ This program is free software; you can redistribute it and/or modify it
+ under the terms of the GNU General Public License version 2 as published
+ by the Free Software Foundation.
+ .
+ On Debian systems, the full text of the GNU General Public License
+ version 2 can be found in the file /usr/share/common-licenses/GPL-2.

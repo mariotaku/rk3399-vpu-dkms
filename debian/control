@@ -1,0 +1,17 @@
+Source: rk3399-vpu-dkms
+Section: kernel
+Priority: optional
+Maintainer: Mariotaku <git@mariotaku.me>
+Build-Depends: debhelper-compat (= 13), dh-sequence-dkms
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: rk3399-vpu-dkms
+Architecture: all
+Depends: ${misc:Depends}
+Recommends: linux-headers-arm64
+Description: Hantro VPU driver with an H.264 encoder for RK3399 (DKMS)
+ A patched copy of the Linux 6.12 hantro-vpu driver (drivers/media/platform/
+ verisilicon), built with DKMS. It replaces the in-tree module and keeps all
+ of its functions, and adds a stateful V4L2 H.264 encoder on the RK3399
+ VEPU2 block, usable from FFmpeg's h264_v4l2m2m and GStreamer's v4l2h264enc.

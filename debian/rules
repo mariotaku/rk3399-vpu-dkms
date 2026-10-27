@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/pkg-info.mk
+
+DKMS_DIR = debian/rk3399-vpu-dkms/usr/src/rk3399-vpu-$(DEB_VERSION_UPSTREAM)
+
+%:
+	dh $@
+
+override_dh_auto_build override_dh_auto_clean override_dh_auto_test:
+
+override_dh_auto_install:
+	install -d $(DKMS_DIR)
+	install -m 644 src/Kbuild src/Makefile src/*.c src/*.h $(DKMS_DIR)/
+
+override_dh_dkms:
+	dh_dkms -V -- dkms.conf

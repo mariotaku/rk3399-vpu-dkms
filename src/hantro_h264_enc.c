@@ -64,6 +64,26 @@ static unsigned int h264e_mb_height(struct hantro_ctx *ctx)
 	return MB_HEIGHT(ctx->src_fmt.height);
 }
 
+/*
+ * The visible size: the CAPTURE format, which the OUTPUT crop selection
+ * also sets, as long as it lies inside the last macroblock column and row
+ * of the OUTPUT frame (the hardware crops at most 12 columns and 15 rows);
+ * the whole OUTPUT frame otherwise.
+ */
+void hantro_h264_enc_visible(struct hantro_ctx *ctx, u32 *width, u32 *height)
+{
+	u32 w = ctx->dst_fmt.width, h = ctx->dst_fmt.height;
+	u32 src_w = ctx->src_fmt.width, src_h = ctx->src_fmt.height;
+
+	if (w > src_w || MB_WIDTH(w) != MB_WIDTH(src_w))
+		w = src_w;
+	if (h > src_h || MB_HEIGHT(h) != MB_HEIGHT(src_h))
+		h = src_h;
+
+	*width = w;
+	*height = h;
+}
+
 size_t hantro_h264_enc_rec_luma_size(struct hantro_ctx *ctx)
 {
 	return h264e_mb_width(ctx) * MB_DIM * h264e_mb_height(ctx) * MB_DIM;
@@ -100,7 +120,44 @@ static void h264e_fill_vui(struct hantro_ctx *ctx,
 	struct v4l2_pix_format_mplane *fmt = &ctx->src_fmt;
 	u8 primaries = 0, transfer = 0, matrix = 0;
 
+	const struct v4l2_format_info *info = v4l2_format_info(fmt->pixelformat);
+
 	video->flags |= V4L2_H264_SPS_VIDEO_FLAG_VUI_PARAMETERS_PRESENT;
+
+	/*
+	 * RGB input goes through the encoder's colour conversion, which
+	 * produces full-range BT.709 Y'CbCr (rockchip_vpu2_hw_h264_enc.c), so
+	 * the stream says exactly that; primaries and transfer function stay
+	 * those of the RGB source (sRGB unless userspace says otherwise).
+	 */
+	if (info && info->pixel_enc == V4L2_PIXEL_ENC_RGB) {
+		switch (fmt->colorspace) {
+		case V4L2_COLORSPACE_SMPTE170M:
+			primaries = V4L2_H264_VUI_COLOUR_SMPTE170M;
+			transfer = V4L2_H264_VUI_TRANSFER_SMPTE170M;
+			break;
+		case V4L2_COLORSPACE_BT2020:
+			primaries = V4L2_H264_VUI_COLOUR_BT2020;
+			transfer = V4L2_H264_VUI_TRANSFER_BT709;
+			break;
+		case V4L2_COLORSPACE_REC709:
+			primaries = V4L2_H264_VUI_COLOUR_BT709;
+			transfer = V4L2_H264_VUI_TRANSFER_BT709;
+			break;
+		default:
+			primaries = V4L2_H264_VUI_COLOUR_BT709;
+			transfer = V4L2_H264_VUI_TRANSFER_SRGB;
+			break;
+		}
+		video->flags |= V4L2_H264_SPS_VIDEO_FLAG_VUI_VIDEO_SIGNAL_TYPE_PRESENT |
+				V4L2_H264_SPS_VIDEO_FLAG_VUI_COLOUR_DESCRIPTION_PRESENT |
+				V4L2_H264_SPS_VIDEO_FLAG_VUI_VIDEO_FULL_RANGE;
+		video->video_format = V4L2_H264_VUI_VIDEO_UNSPECIFIED;
+		video->colour_primaries = primaries;
+		video->transfer_characteristics = transfer;
+		video->matrix_coefficients = V4L2_H264_VUI_MATRIX_BT709;
+		goto timing;
+	}
 
 	/*
 	 * Colorimetry only when userspace set one; the hantro default
@@ -142,6 +199,7 @@ static void h264e_fill_vui(struct hantro_ctx *ctx,
 		video->matrix_coefficients = matrix;
 	}
 
+timing:
 	if (cfg->timeperframe.numerator && cfg->timeperframe.denominator) {
 		video->flags |= V4L2_H264_SPS_VIDEO_FLAG_VUI_TIMING_INFO_PRESENT |
 				V4L2_H264_SPS_VIDEO_FLAG_VUI_FIXED_FRAME_RATE;
@@ -168,6 +226,7 @@ static void h264e_fill_headers(struct hantro_ctx *ctx)
 	struct v4l2_h264_sps_video *video = &h264->state.sps_video;
 	unsigned int mb_w = h264e_mb_width(ctx), mb_h = h264e_mb_height(ctx);
 	unsigned int crop_r, crop_b;
+	u32 vis_w, vis_h;
 
 	memset(sps, 0, sizeof(*sps));
 	memset(pps, 0, sizeof(*pps));
@@ -188,9 +247,9 @@ static void h264e_fill_headers(struct hantro_ctx *ctx)
 	sps->flags = V4L2_H264_SPS_FLAG_FRAME_MBS_ONLY |
 		     V4L2_H264_SPS_FLAG_DIRECT_8X8_INFERENCE;
 
-	/* The visible size is the CAPTURE format (or the OUTPUT crop). */
-	crop_r = mb_w * MB_DIM - min(ctx->dst_fmt.width, mb_w * MB_DIM);
-	crop_b = mb_h * MB_DIM - min(ctx->dst_fmt.height, mb_h * MB_DIM);
+	hantro_h264_enc_visible(ctx, &vis_w, &vis_h);
+	crop_r = mb_w * MB_DIM - vis_w;
+	crop_b = mb_h * MB_DIM - vis_h;
 	if (crop_r || crop_b) {
 		video->flags |= V4L2_H264_SPS_VIDEO_FLAG_FRAME_CROPPING;
 		/* 4:2:0 frame coding: crop units are two luma samples. */
@@ -465,6 +524,8 @@ int hantro_h264_enc_ctrls_setup(struct hantro_ctx *ctx)
 	v4l2_ctrl_new_std(hdl, ops, V4L2_CID_MPEG_VIDEO_H264_I_PERIOD,
 			  0, S32_MAX, 1, 0);
 	v4l2_ctrl_new_std(hdl, ops, V4L2_CID_MPEG_VIDEO_B_FRAMES, 0, 0, 1, 0);
+	/* One source frame at a time is enough to keep the encoder busy. */
+	v4l2_ctrl_new_std(hdl, NULL, V4L2_CID_MIN_BUFFERS_FOR_OUTPUT, 1, 32, 1, 1);
 	/* SPS and PPS always come with the IDR frame they apply to. */
 	v4l2_ctrl_new_std_menu(hdl, ops, V4L2_CID_MPEG_VIDEO_HEADER_MODE,
 			       V4L2_MPEG_VIDEO_HEADER_MODE_JOINED_WITH_1ST_FRAME,

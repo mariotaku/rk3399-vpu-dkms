@@ -53,6 +53,85 @@ next section.
   `STR_HDR_REM` registers and a bit offset; the hardware reports the
   stream length in bits from that aligned address.
 
+## Interface details
+
+- Raw (OUTPUT) formats: VEPU2 reads whole macroblock rows even when it
+  crops; with planes sized exactly to 1920x1080 it faulted in the IOMMU
+  (read past the buffer, after which the IOMMU needed a module reload).
+  Single-buffer formats (NV12, YUV420, YUYV, UYVY, RGB) therefore keep the
+  height the client asked for, with planes at `bytesperline * height` as
+  V4L2 defines them, and pad the line stride to 16 pixels and `sizeimage`
+  to the macroblock-aligned frame. Multi-buffer formats (NV12M, YUV420M)
+  report the macroblock-aligned height, since that is the only way a client
+  sizes each plane buffer for it. Both FFmpeg and GStreamer depend on this:
+  FFmpeg copies `height` lines from its frame (a rounded-up height made it
+  read past its own buffer and crash), and GStreamer places the second
+  NV12M plane by `bytesperline * height`.
+- The size a client asks for on OUTPUT is checked again when the coded
+  format changes. FFmpeg and GStreamer set OUTPUT before CAPTURE, while the
+  JPEG default (16-line steps) is still selected.
+- Visible size: the CAPTURE format or the OUTPUT crop selection, as in the
+  stock driver's JPEG encoder, as long as it lies inside the last macroblock
+  column and row; it goes into the SPS frame cropping and the overfill
+  registers.
+- Frame interval: `VIDIOC_S_PARM` on OUTPUT; CAPTURE has none (no
+  `V4L2_FMT_FLAG_ENC_CAP_FRAME_INTERVAL`).
+- Drain: `V4L2_ENC_CMD_STOP`, last buffer flagged `V4L2_BUF_FLAG_LAST`, and
+  `V4L2_EVENT_EOS` for clients that subscribe (the stock driver queued the
+  event but refused the subscription).
+- `V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME` applies to the next frame the
+  hardware encodes, which can be a frame already queued: neatvnc asking for
+  a key frame before frame 30 got it at frame 29.
+- RGB input: the hardware converts with full-range BT.709 coefficients, and
+  the VUI says so (full range, BT.709 matrix, primaries and transfer of the
+  RGB colorspace, sRGB by default). Each of the eight RGB fourccs was
+  checked against FFmpeg's pixel format with the same byte order (RGB PSNR
+  45/47/44 dB).
+- `V4L2_CID_MPEG_VIDEO_HEADER_MODE` offers only `JOINED_WITH_1ST_FRAME`;
+  FFmpeg's request for SEPARATE fails and FFmpeg carries on.
+- `V4L2_CID_MIN_BUFFERS_FOR_OUTPUT` reads 1.
+- In constant-QP and CQ modes P-frames at QP 48 came out about five times
+  larger than at QP 16 on mostly static content. The QP-indexed skip, intra
+  and inter tables are the same as MPP's, so this is the hardware's mode
+  decision, not a porting error.
+
+## Client compatibility
+
+Measured on the board (Debian 13, FFmpeg 7.1 with v4l2-request, GStreamer
+1.26, v4l-utils 1.30.1):
+
+- FFmpeg `h264_v4l2m2m`: NV12 and YUV420P input at 640x360, 1280x720,
+  1364x766 and 1920x1080; 2 Mbit/s requested, 1.90 Mbit/s produced at
+  720p. FFmpeg's wrapper accepts only YUV input, so RGB goes through the
+  other clients.
+- GStreamer `v4l2h264enc`: NV12 and I420 (it picks NV12M and YUV420M) at
+  640x360, 1364x766 and 1920x1080; 4 Mbit/s requested, 4.07 Mbit/s
+  produced; decoded output matches the source frame for frame.
+- neatvnc 0.9.1 (`tools/neatvnc/`, see below): RGB DMABUF input at
+  1920x1080, CQ mode with quality 1, 10, 18, 30, 51 mapping to I/P QPs
+  12/16 up to 44/48, forced key frames, colour bars within 3 levels of the
+  source after decoding.
+- v4l2-compliance 1.30.1 on the encoder node: 43 of 49 pass, 49 of 55 with
+  streaming (`-s`, all four MMAP streaming tests pass). The failures:
+  - `VIDIOC_QUERYCAP` (twice): the node encodes JPEG and H.264, and the
+    tool allows one codec type per node. The stock driver's single encoder
+    node serves every encoder format; splitting it is out of scope.
+  - `VIDIOC_ENUM_FMT/FRAMESIZES`: the tool wants `VIDIOC_ENUM_FRAMESIZES`
+    on raw formats from a stateful encoder. The specification makes those
+    sizes depend on the coded format on CAPTURE, and GStreamer probes raw
+    caps before it selects one; answering with the JPEG default's 16-pixel
+    steps stopped `v4l2h264enc` from negotiating 360 or 766 lines. The
+    driver keeps the stock answer (`ENOTTY`), which the specification
+    allows ("the client may use"). The tool then stops collecting formats,
+    so `G_FMT`, `TRY_FMT` and `S_FMT` fail on YUV420M as a consequence;
+    with the frame sizes answered they passed.
+  - With the frame sizes answered, `S_FMT` also failed on the JPEG raw
+    colorspace check; the stock module fails it too.
+- Stock functions, against the stock module on the same inputs: VP8 and
+  MPEG-2 decode through FFmpeg `-hwaccel v4l2request` (the decoder's
+  interrupt count rose by one per frame) and JPEG encode through GStreamer
+  `v4l2jpegenc` give identical output hashes.
+
 ## Testing
 
 `tools/h264enc-test` encodes raw frames through the stateful interface
@@ -114,6 +193,13 @@ specification. The driver follows the specification; the test harness in
 neatvnc queues `stride * ALIGN(height, 16)` bytes from each source DMABUF,
 so the buffer objects it is given must cover the macroblock-aligned height
 (1088 rows for 1080p); vb2 rejects a smaller buffer.
+
+`tools/neatvnc/harness.c` drives that backend without a VNC server: it
+allocates linear XBGR8888 GBM buffer objects on the render node, draws 75%
+colour bars with a moving square, feeds them as neatvnc's encoder would
+(at most two frames in flight, key frames requested at the start and in
+the middle) and writes the packets to a file. Build it on the board with
+`make NEATVNC_SRC=<neatvnc-0.9.1 tree with v4l2m2m-fixes.patch applied>`.
 
 ## Building and installing
 

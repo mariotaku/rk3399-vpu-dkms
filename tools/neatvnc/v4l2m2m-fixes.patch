@@ -1,0 +1,26 @@
+--- a/src/enc/h264/v4l2m2m-impl.c	2026-10-27 12:17:07.983555439 +0900
++++ b/src/enc/h264/v4l2m2m-impl.c	2026-10-27 12:17:07.991896498 +0900
+@@ -163,6 +163,9 @@
+ 	if (have_v4l2_format(formats, n_formats, f)) \
+ 		return f
+ 
++	/* DRM and V4L2 share fourcc codes for the same memory layout. */
++	TRY_FORMAT(drm_format);
++
+ 	switch (drm_format) {
+ 	case DRM_FORMAT_RGBX8888:
+ 	case DRM_FORMAT_RGBA8888:
+@@ -533,8 +536,12 @@
+ 	ctrl.value = V4L2_MPEG_VIDEO_BITRATE_MODE_CQ;
+ 	ioctl(self->fd, VIDIOC_S_CTRL, &ctrl);
+ 
++	/*
++	 * open-h264.c passes a QP-like value (1 best .. 51 worst); the V4L2
++	 * control is 1 (lowest) .. 100 (highest quality).
++	 */
+ 	ctrl.id = V4L2_CID_MPEG_VIDEO_CONSTANT_QUALITY;
+-	ctrl.value = self->quality;
++	ctrl.value = 100 - (self->quality - 1) * 99 / 50;
+ 	ioctl(self->fd, VIDIOC_S_CTRL, &ctrl);
+ }
+ 

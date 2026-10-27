@@ -261,6 +261,8 @@ struct hantro_ctx {
 	struct v4l2_ctrl_handler ctrl_handler;
 	int jpeg_quality;
 	struct hantro_h264_enc_cfg h264_enc_cfg;
+	u32 raw_req_width;
+	u32 raw_req_height;
 	int bit_depth;
 
 	const struct hantro_codec_ops *codec_ops;

@@ -234,6 +234,7 @@ int rockchip_vpu2_h264_enc_run(struct hantro_ctx *ctx)
 	unsigned int mb_w = MB_WIDTH(ctx->src_fmt.width);
 	unsigned int mb_h = MB_HEIGHT(ctx->src_fmt.height);
 	unsigned int overfill_r, overfill_b, qp, i;
+	u32 vis_w, vis_h;
 	dma_addr_t rec, ref;
 	u32 scaler, skip_penalty, reg;
 	u8 dmv_penalty[128], dmv_qpel_penalty[128];
@@ -331,8 +332,9 @@ int rockchip_vpu2_h264_enc_run(struct hantro_ctx *ctx)
 	vepu_write_relaxed(vpu, reg, VEPU_REG_ENC_CTRL3);
 
 	/* Crop inside the last macroblock column and row. */
-	overfill_r = (mb_w * MB_DIM - min_t(u32, ctx->dst_fmt.width, mb_w * MB_DIM)) / 4;
-	overfill_b = mb_h * MB_DIM - min_t(u32, ctx->dst_fmt.height, mb_h * MB_DIM);
+	hantro_h264_enc_visible(ctx, &vis_w, &vis_h);
+	overfill_r = (mb_w * MB_DIM - vis_w) / 4;
+	overfill_b = mb_h * MB_DIM - vis_h;
 	scaler = max(1U, 200 / (mb_w + mb_h));
 	skip_penalty = min(255U, h264_skip_sad_penalty[qp] * scaler);
 	reg = VEPU_REG_STREAM_START_OFFSET((h264->hdr_len & 7) * 8) |

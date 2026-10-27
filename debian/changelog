@@ -1,3 +1,11 @@
+rk3399-vpu-dkms (0.3.0) unstable; urgency=medium
+
+  * Complete the stateful interface for FFmpeg, GStreamer and neatvnc:
+    raw formats keep the client's height, EOS event, OUTPUT-only frame
+    interval, MIN_BUFFERS_FOR_OUTPUT, VUI for RGB input.
+
+ -- Mariotaku <git@mariotaku.me>  Tue, 27 Oct 2026 16:00:00 +0000
+
 rk3399-vpu-dkms (0.2.0) unstable; urgency=medium
 
   * Stateful H.264 encoder on RK3399 VEPU2: I and P frames, constant QP

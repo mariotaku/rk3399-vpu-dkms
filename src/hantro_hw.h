@@ -509,6 +509,7 @@ void rockchip_vpu2_h264_enc_done(struct hantro_ctx *ctx);
 int hantro_h264_enc_init(struct hantro_ctx *ctx);
 int hantro_h264_enc_ctrls_setup(struct hantro_ctx *ctx);
 void hantro_h264_enc_exit(struct hantro_ctx *ctx);
+void hantro_h264_enc_visible(struct hantro_ctx *ctx, u32 *width, u32 *height);
 int hantro_h264_enc_prepare(struct hantro_ctx *ctx, u8 *dst, size_t dst_size);
 void hantro_h264_enc_complete(struct hantro_ctx *ctx, size_t bytesused);
 size_t hantro_h264_enc_rec_luma_size(struct hantro_ctx *ctx);

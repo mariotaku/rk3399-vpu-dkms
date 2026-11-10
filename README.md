@@ -298,3 +298,20 @@ To cross-build, pass `KDIR=<arm64 headers> ARCH=arm64 CROSS_COMPILE=aarch64-linu
 Debian's arm64 headers link `scripts/` to the arm64 `linux-kbuild` package; on
 an x86 host extract the amd64 `linux-kbuild-<version>` of the same version
 next to them instead.
+
+## CI
+
+`.github/workflows/dkms.yml` runs `ci/dkms.sh` on every push to `main`, on
+pull requests and on manual runs, in a `debian:trixie` container on GitHub's
+arm64 runner: it builds the package with `dpkg-buildpackage`, installs it
+with `linux-headers-arm64`, has DKMS build and install the module for that
+headers package's kernel (not the runner's own), and checks the module with
+`modinfo`: vermagic, the RK3399 aliases, the parameters and the encoder's
+symbols. A manual run (Actions, DKMS, "Run workflow") keeps the `.deb` as
+the run's `rk3399-vpu-dkms` artifact. Pushing a tag `v<version>`, where the
+version is the top entry of `debian/changelog`, publishes the `.deb` as a
+GitHub release with that entry as its notes; the run fails if the two
+differ. The same script runs locally in an arm64 container:
+
+    docker run --rm --platform linux/arm64 -v "$PWD:/src" -w /src \
+        debian:trixie ci/dkms.sh dist

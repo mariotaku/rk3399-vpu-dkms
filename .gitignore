@@ -18,3 +18,4 @@ modules.order
 /tools/h264enc-test
 /tools/neatvnc/neatvnc-harness
 /tools/neatvnc/neatvnc-0.9.1/
+/dist/

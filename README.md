@@ -229,7 +229,7 @@ and the stock files that the kernel ships under another licence keep it
 BSD-2-Clause, `rockchip_av1_filmgrain.c` GPL-2.0-only or Apache-2.0). The
 repository follows the [REUSE](https://reuse.software/) specification:
 `REUSE.toml` and the files' SPDX headers give each file's licence, and the
-texts are in `LICENSES/`. `debian/copyright` says the same in Debian's
+texts are in `LICENSES/` (GPL-2.0 also as `LICENSE`). `debian/copyright` says the same in Debian's
 format.
 
 | part | origin |

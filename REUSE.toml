@@ -10,6 +10,7 @@ SPDX-PackageDownloadLocation = "https://github.com/mariotaku/rk3399-vpu-dkms"
 [[annotations]]
 path = [
   ".gitignore",
+  "LICENSE",
   "README.md",
   "REUSE.toml",
   "dkms.conf",

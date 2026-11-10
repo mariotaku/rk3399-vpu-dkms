@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Mariotaku <git@mariotaku.me>
 #
 # Out-of-tree wrapper; the kbuild rules are in Kbuild. DKMS calls this
 # with KERNELRELEASE and KDIR set; a manual build defaults to the

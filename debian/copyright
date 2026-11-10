@@ -13,6 +13,18 @@ Copyright: 2018-2024 the Linux kernel hantro driver authors (Collabora,
  2026 Mariotaku
 License: GPL-2.0-only
 
+Files: src/hantro_jpeg.c src/hantro_jpeg.h
+Copyright: the Linux kernel hantro driver authors (see the headers)
+License: GPL-2.0-or-later
+
+Files: src/rockchip_av1_entropymode.c
+Copyright: the Linux kernel hantro driver authors (see the header)
+License: BSD-2-Clause
+
+Files: src/rockchip_av1_filmgrain.c
+Copyright: the Linux kernel hantro driver authors (see the header)
+License: GPL-2.0-only or Apache-2.0
+
 Files: src/v4l2-h264-enc-defs.h src/v4l2-h264-enc.h
  src/v4l2-h264-enc-rbsp.c src/v4l2-h264-enc-rbsp.h
  src/v4l2-h264-enc-rc.c src/v4l2-h264-enc-rc.h
@@ -34,6 +46,13 @@ License: GPL-2.0-only
 
 Files: tools/neatvnc/stub/enc/h264-encoder.h
 Copyright: 2021-2024 Andri Yngvason
+License: ISC
+
+Files: tools/neatvnc/v4l2m2m-fixes.patch
+Copyright: 2026 Mariotaku
+Comment: A patch to neatvnc, under neatvnc's licence.
+License: ISC
+
 License: ISC
  Permission to use, copy, modify, and/or distribute this software for any
  purpose with or without fee is hereby granted, provided that the above
@@ -63,3 +82,31 @@ License: GPL-2.0-only
  .
  On Debian systems, the full text of the GNU General Public License
  version 2 can be found in the file /usr/share/common-licenses/GPL-2.
+
+License: BSD-2-Clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+ 1. Redistributions of source code must retain the above copyright notice,
+ this list of conditions and the following disclaimer.
+ .
+ 2. Redistributions in binary form must reproduce the above copyright
+ notice, this list of conditions and the following disclaimer in the
+ documentation and/or other materials provided with the distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+ IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: Apache-2.0
+ On Debian systems, the full text of the Apache License, Version 2.0 can
+ be found in the file /usr/share/common-licenses/Apache-2.0.

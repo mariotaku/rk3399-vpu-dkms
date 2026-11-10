@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Mariotaku <git@mariotaku.me>
 #
 # Builds neatvnc 0.9.1's V4L2 M2M backend with v4l2m2m-fixes.patch into a
 # small harness. NEATVNC_SRC points at an unpacked neatvnc-0.9.1 source

@@ -223,8 +223,14 @@ encoder's own chroma coding loss, not drift (libx264 holds Cb at about
 ## Provenance and licences
 
 The driver is GPL-2.0-only, like the kernel driver it derives from; the files
-taken from Paul Kocialkowski's series keep their GPL-2.0-or-later notice.
-`debian/copyright` lists each file's licence.
+taken from Paul Kocialkowski's series keep their GPL-2.0-or-later notice,
+and the stock files that the kernel ships under another licence keep it
+(`hantro_jpeg.[ch]` GPL-2.0-or-later, `rockchip_av1_entropymode.c`
+BSD-2-Clause, `rockchip_av1_filmgrain.c` GPL-2.0-only or Apache-2.0). The
+repository follows the [REUSE](https://reuse.software/) specification:
+`REUSE.toml` and the files' SPDX headers give each file's licence, and the
+texts are in `LICENSES/`. `debian/copyright` says the same in Debian's
+format.
 
 | part | origin |
 |---|---|

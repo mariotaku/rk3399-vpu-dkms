@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Mariotaku <git@mariotaku.me>
 /*
  * Minimal stateful V4L2 H.264 encoder client for rk3399-vpu-dkms.
  *

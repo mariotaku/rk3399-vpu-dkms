@@ -1,0 +1,77 @@
+version = 1
+SPDX-PackageName = "rk3399-vpu-dkms"
+SPDX-PackageDownloadLocation = "https://github.com/mariotaku/rk3399-vpu-dkms"
+
+# Source files written for this package carry their own SPDX header. The entries below cover
+# what cannot carry one (documentation, packaging metadata, patches) and the files taken from
+# other projects, which stay byte-identical to their origin. debian/copyright says the same in
+# Debian's format.
+
+[[annotations]]
+path = [
+  ".gitignore",
+  "README.md",
+  "REUSE.toml",
+  "dkms.conf",
+  "debian/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Mariotaku <git@mariotaku.me>"
+SPDX-License-Identifier = "GPL-2.0-only"
+
+# Linux's drivers/media/platform/verisilicon as shipped in Debian's linux-source-6.12. The
+# kernel's own headers use the deprecated "GPL-2.0" and "GPL-2.0+" identifiers and name the
+# copyright holders in their own words; this override states the same in current SPDX terms
+# without editing the files.
+[[annotations]]
+path = "src/**"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "The Linux kernel hantro driver authors (Rockchip, Google, Collabora, Bootlin, NXP, Pengutronix, Microchip, STMicroelectronics and others; see each file's header)",
+  "2026 Mariotaku <git@mariotaku.me>",
+]
+SPDX-License-Identifier = "GPL-2.0-only"
+
+[[annotations]]
+path = ["src/hantro_jpeg.c", "src/hantro_jpeg.h"]
+precedence = "override"
+SPDX-FileCopyrightText = "The Linux kernel hantro driver authors (see the file's header)"
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = "src/rockchip_av1_entropymode.c"
+precedence = "override"
+SPDX-FileCopyrightText = "The Linux kernel hantro driver authors (see the file's header)"
+SPDX-License-Identifier = "BSD-2-Clause"
+
+[[annotations]]
+path = "src/rockchip_av1_filmgrain.c"
+precedence = "override"
+SPDX-FileCopyrightText = "The Linux kernel hantro driver authors (see the file's header)"
+SPDX-License-Identifier = "GPL-2.0-only OR Apache-2.0"
+
+# Files written for this package, and Paul Kocialkowski's v4l2-h264-enc series, carry their
+# own current SPDX headers.
+[[annotations]]
+path = [
+  "src/Makefile",
+  "src/hantro_h264_enc.c",
+  "src/rockchip_vpu2_hw_h264_enc.c",
+  "src/v4l2-h264-enc*",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Mariotaku <git@mariotaku.me>"
+SPDX-License-Identifier = "GPL-2.0-only"
+
+# neatvnc 0.9.1, copied unchanged; the patch carries the licence of the project it patches.
+[[annotations]]
+path = "tools/neatvnc/stub/enc/h264-encoder.h"
+precedence = "override"
+SPDX-FileCopyrightText = "2021-2024 Andri Yngvason"
+SPDX-License-Identifier = "ISC"
+
+[[annotations]]
+path = "tools/neatvnc/v4l2m2m-fixes.patch"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Mariotaku <git@mariotaku.me>"
+SPDX-License-Identifier = "ISC"

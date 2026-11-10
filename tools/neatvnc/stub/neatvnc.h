@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* SPDX-FileCopyrightText: 2026 Mariotaku <git@mariotaku.me> */
 /* Stand-ins for the parts of neatvnc's headers that v4l2m2m-impl.c uses. */
 #pragma once
 #include <stdio.h>

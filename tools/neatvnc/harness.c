@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Mariotaku <git@mariotaku.me>
 /*
  * Drives neatvnc 0.9.1's V4L2 M2M H.264 backend (src/enc/h264/v4l2m2m-impl.c,
  * compiled in unchanged apart from v4l2m2m-fixes.patch) with GBM buffer

@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Mariotaku <git@mariotaku.me>
 /*
  * Hantro VPU codec driver: stateful H.264 encoder front end.
  *
